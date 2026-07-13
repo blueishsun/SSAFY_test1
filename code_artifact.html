@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>무지출 챌린지 트래커</title>
+  <!-- Tailwind CSS CDN 및 다크모드 설정 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          screens: {
+            'xs': '375px'
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts (Noto Sans KR) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- html2canvas CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  
+  <style>
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+    }
+    
+    /* 부드러운 테마 전환을 위한 글로벌 트랜지션 */
+    *, *::before, *::after {
+      transition-property: background-color, border-color, text-color, fill, stroke, box-shadow;
+      transition-duration: 250ms;
+      transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* 자연스럽고 찰진 도장 스탬프 애니메이션 (0.25초) */
+    @keyframes stamp {
+      0% {
+        transform: scale(1.6);
+        opacity: 0;
+      }
+      70% {
+        transform: scale(0.95);
+        opacity: 0.9;
+      }
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+    .stamp-active {
+      animation: stamp 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards;
+    }
+  </style>
+</head>
+<body class="bg-[#f4fbf7] text-slate-800 dark:bg-[#0d1612] dark:text-slate-100 min-h-screen flex flex-col justify-between pb-12 relative overflow-x-hidden">
+
+  <!-- 다크모드/라이트모드 토글 버튼 (우측 상단 고정, 터치 영역 보장) -->
+  <div class="absolute top-4 right-4 z-40">
+    <button id="theme-toggle" class="p-3 rounded-full bg-white dark:bg-[#16221c] border border-emerald-100/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 shadow-md hover:scale-105 active:scale-95 transition-all" aria-label="테마 전환 버튼">
+      <i id="theme-icon" data-lucide="moon" class="w-5 h-5"></i>
+    </button>
+  </div>
+
+  <!-- 메인 컨테이너 (결과 이미지 캡처 영역 포함) -->
+  <main class="max-w-4xl w-full mx-auto px-4 py-8 flex-grow" id="capture-area">
+    
+    <!-- 헤더 영역 -->
+    <header class="text-center mb-8 pr-12 sm:pr-0">
+      <div class="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-full text-xs sm:text-sm font-medium mb-2">
+        <i data-lucide="sparkles" class="w-4 h-4"></i>
+        <span>절약의 기쁨을 일상으로!</span>
+      </div>
+      <h1 class="text-2xl sm:text-4xl font-extrabold text-emerald-900 dark:text-emerald-100 tracking-tight">
+        <span id="current-month-title">0월</span> 무지출 챌린지
+      </h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-2 text-xs sm:text-base leading-relaxed">달력을 클릭하여 오늘 하루 지출 제로를 달성했는지 기록해 보세요.</p>
+    </header>
+
+    <!-- 대시보드 그리드 (요약 카드 + 도넛 차트) -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
+      
+      <!-- 요약 카드 영역 (2컬럼 차지, 2x2 반응형 배치로 확장) -->
+      <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        
+        <!-- 목표 일수 카드 -->
+        <div class="bg-white dark:bg-[#16221c] p-4 sm:p-5 rounded-2xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 flex flex-col justify-between relative overflow-hidden">
+          <div>
+            <div class="flex items-center justify-between text-slate-400 dark:text-slate-500 mb-2">
+              <span class="text-xs sm:text-sm font-medium">목표 일수</span>
+              <div class="p-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                <i data-lucide="target" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="target-days-display" class="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100">0</span>
+              <span class="text-xs sm:text-sm text-slate-400 dark:text-slate-500">일 / <span id="total-month-days">30</span>일</span>
+            </div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex gap-2 items-center">
+            <input type="range" id="target-slider" min="1" max="31" value="15" 
+                   class="w-full accent-emerald-600 dark:accent-emerald-500 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer" aria-label="목표 일수 조절">
+            <span class="text-[10px] sm:text-xs text-slate-500 whitespace-nowrap">조절</span>
+          </div>
+        </div>
+
+        <!-- 현재 스트릭 카드 (등급 배지 포함) -->
+        <div class="bg-white dark:bg-[#16221c] p-4 sm:p-5 rounded-2xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 flex flex-col justify-between relative overflow-hidden">
+          <div>
+            <div class="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-1 text-slate-400 dark:text-slate-500 mb-2">
+              <span class="text-xs sm:text-sm font-medium">현재 연속 기록</span>
+              <!-- 등급 표시용 배지 -->
+              <span id="streak-badge" class="text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all duration-300 self-start xs:self-auto whitespace-nowrap">새싹 절약러</span>
+            </div>
+            <div class="flex items-baseline justify-between mt-1">
+              <div class="flex items-baseline gap-1">
+                <span id="streak-display" class="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400">0</span>
+                <span class="text-xs sm:text-sm text-slate-400 dark:text-slate-500">일 연속 🔥</span>
+              </div>
+              <div class="p-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-500 dark:text-amber-400 rounded-lg">
+                <i data-lucide="flame" class="w-5 h-5"></i>
+              </div>
+            </div>
+          </div>
+          <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">끊기지 않게 매일 채워보세요!</p>
+        </div>
+
+        <!-- [NEW] 가상 저금통 예상 저축액 카드 -->
+        <div class="bg-white dark:bg-[#16221c] p-4 sm:p-5 rounded-2xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 flex flex-col justify-between relative overflow-hidden">
+          <div>
+            <div class="flex items-center justify-between text-slate-400 dark:text-slate-500 mb-2">
+              <span class="text-xs sm:text-sm font-medium">이번 달 예상 저축액</span>
+              <div class="p-1.5 bg-pink-50 dark:bg-pink-950/40 text-pink-500 dark:text-pink-400 rounded-lg">
+                <i data-lucide="piggy-bank" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="savings-display" class="text-xl sm:text-2xl font-black text-pink-600 dark:text-pink-400">0원</span>
+              <span class="text-xs sm:text-sm">🐷</span>
+            </div>
+          </div>
+          <div class="mt-4 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-col xs:flex-row xs:items-center justify-between gap-1">
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap">하루 평균 지출액</span>
+            <div class="flex items-center gap-1">
+              <input type="number" id="daily-spend-input" step="1000" min="0" value="10000"
+                     class="w-16 sm:w-20 text-right px-1.5 py-0.5 bg-slate-50 dark:bg-[#111c16] border border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 rounded focus:outline-emerald-500" aria-label="하루 예상 소비액">
+              <span class="text-[10px] text-slate-400 dark:text-slate-500">원</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 달성률 카드 -->
+        <div class="bg-white dark:bg-[#16221c] p-4 sm:p-5 rounded-2xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 flex flex-col justify-between relative overflow-hidden">
+          <div>
+            <div class="flex items-center justify-between text-slate-400 dark:text-slate-500 mb-2">
+              <span class="text-xs sm:text-sm font-medium">목표 달성률</span>
+              <div class="p-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg">
+                <i data-lucide="trending-up" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="achievement-percent" class="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400">0</span>
+              <span class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 font-bold">%</span>
+            </div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-between text-[10px] sm:text-xs text-slate-400">
+            <span>성공: <strong id="success-count" class="text-slate-700 dark:text-slate-300">0</strong>일</span>
+            <span>남은 목표: <strong id="remaining-days" class="text-slate-700 dark:text-slate-300">0</strong>일</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 도넛 차트 영역 (1컬럼 차지, 고정폭 및 중앙 정렬 강화) -->
+      <div class="bg-white dark:bg-[#16221c] p-4 sm:p-5 rounded-2xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 flex flex-col items-center justify-center min-h-[220px]">
+        <h3 class="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 self-start flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 챌린지 시각화
+        </h3>
+        <div class="relative w-36 h-36 flex items-center justify-center">
+          <canvas id="achievementChart"></canvas>
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-1">
+            <span id="chart-center-percent" class="text-lg sm:text-xl font-extrabold text-slate-700 dark:text-slate-200">0%</span>
+            <span class="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-medium">목표비율</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 캘린더 컴포넌트 -->
+    <section class="bg-white dark:bg-[#16221c] p-4 sm:p-6 rounded-3xl shadow-sm border border-emerald-100/50 dark:border-emerald-900/30 mb-8">
+      
+      <!-- 달력 헤더 및 안내 범례 (모바일 세로/가로 배치 유동성 확보) -->
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800/80">
+        <div class="flex items-center gap-2">
+          <i data-lucide="calendar" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
+          <span id="calendar-header-title" class="font-bold text-base sm:text-lg text-slate-800 dark:text-slate-100">2026년 7월</span>
+        </div>
+        
+        <!-- 범례 표시 (flex-wrap 및 간격 조절로 모바일 깨짐 방지) -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
+          <div class="flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-100 border border-slate-200 dark:bg-[#1c2e25] dark:border-emerald-950/50"></span>
+            <span>대기</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-50 border-2 border-emerald-500 dark:bg-emerald-950/30 dark:border-emerald-400"></span>
+            <span>오늘</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-[7px]"><i data-lucide="check" class="w-2 h-2"></i></span>
+            <span>성공</span>
+          </div>
+          <div class="flex items-center gap-1 opacity-45">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-100 dark:bg-slate-800/20"></span>
+            <span>미래</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 요일 그리드 헤더 -->
+      <div class="grid grid-cols-7 text-center font-bold text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+        <div class="text-rose-400">일</div>
+        <div>월</div>
+        <div>화</div>
+        <div>수</div>
+        <div>목</div>
+        <div>금</div>
+        <div class="text-blue-400">토</div>
+      </div>
+
+      <!-- 실제 날짜 캘린더 그리드 -->
+      <div id="calendar-grid" class="grid grid-cols-7 gap-1 sm:gap-2.5">
+        <!-- JS로 날짜가 동적 생성되는 공간 -->
+      </div>
+      
+    </section>
+
+    <!-- 액션 및 메시지 공유 영역 -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 bg-emerald-50/50 dark:bg-[#13241b] rounded-2xl border border-emerald-100/30 dark:border-emerald-900/20">
+      <div class="flex items-start gap-3">
+        <div class="p-2 bg-emerald-500 text-white rounded-xl mt-0.5 hidden sm:block">
+          <i data-lucide="gift" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h4 class="font-bold text-emerald-900 dark:text-emerald-200 text-xs sm:text-base">티끌 모아 태산!</h4>
+          <p id="motivational-message" class="text-[10px] sm:text-sm text-emerald-700/80 dark:text-emerald-400/80 mt-0.5 leading-normal">매일매일 불필요한 소비를 줄이고 스트릭을 이어 나가보세요.</p>
+        </div>
+      </div>
+      
+      <!-- 결과 공유하기 버튼 -->
+      <button id="btn-share" class="w-full sm:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition duration-200 shrink-0">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span>결과 이미지 저장</span>
+      </button>
+    </div>
+
+  </main>
+
+  <!-- 푸터 -->
+  <footer class="text-center text-[10px] sm:text-xs text-slate-400 dark:text-slate-600 mt-4 px-4">
+    <p>© 2026 No Spend Tracker. Designed with 💚 for Smart Spenders.</p>
+  </footer>
+
+  <!-- 알림 모달/메시지 토스트용 컨테이너 (alert 방지) -->
+  <div id="toast-message" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white text-xs sm:text-sm px-5 py-2.5 rounded-full shadow-xl flex items-center gap-2 pointer-events-none opacity-0 transition-opacity duration-300 z-50 whitespace-nowrap">
+    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 dark:text-emerald-600"></i>
+    <span id="toast-text">기록이 완료되었습니다!</span>
+  </div>
+
+  <!-- 등급 업 축하 오버레이 모달 -->
+  <div id="celebration-overlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none opacity-0 transition-all duration-500">
+    <div class="bg-white dark:bg-[#16221c] p-6 sm:p-8 rounded-3xl shadow-2xl border border-emerald-100 dark:border-emerald-900/40 text-center max-w-[320px] sm:max-w-sm w-full mx-4 transform scale-90 transition-transform duration-500 relative overflow-hidden">
+      <div class="absolute -top-10 -left-10 w-20 h-20 bg-amber-200/20 rounded-full blur-xl"></div>
+      <div class="absolute -bottom-10 -right-10 w-20 h-20 bg-emerald-400/10 rounded-full blur-xl"></div>
+
+      <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-amber-400 to-yellow-300 dark:from-amber-600 dark:to-yellow-400 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/20 animate-bounce">
+        <i data-lucide="crown" class="w-8 h-8 sm:w-10 sm:h-10 text-white"></i>
+      </div>
+      <h3 class="text-[10px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 tracking-wider uppercase mb-1">등급 업그레이드!</h3>
+      <h2 id="celebration-title" class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white mb-3">등급명</h2>
+      <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-1">축하합니다! 꾸준히 무지출 챌린지를 실천하여 영예로운 새 등급에 안착하셨습니다! 🎉</p>
+    </div>
+  </div>
+
+  <!-- [NEW] 저축 마일스톤 돌파 축하 모달 -->
+  <div id="milestone-overlay" class="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none opacity-0 transition-all duration-500">
+    <div class="bg-white dark:bg-[#16221c] p-6 sm:p-8 rounded-3xl shadow-2xl border border-pink-100 dark:border-pink-900/40 text-center max-w-[320px] sm:max-w-sm w-full mx-4 transform scale-90 transition-transform duration-500 relative overflow-hidden">
+      <div class="absolute -top-10 -left-10 w-24 h-24 bg-pink-200/20 rounded-full blur-xl"></div>
+      <div class="absolute -bottom-10 -right-10 w-20 h-20 bg-emerald-300/10 rounded-full blur-xl"></div>
+
+      <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-pink-400 to-rose-400 dark:from-pink-600 dark:to-rose-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-pink-500/20 animate-bounce">
+        <i data-lucide="piggy-bank" class="w-8 h-8 sm:w-10 sm:h-10 text-white"></i>
+      </div>
+      <h3 class="text-[10px] sm:text-xs font-bold text-pink-600 dark:text-pink-400 tracking-wider uppercase mb-1">저축 목표 돌파!</h3>
+      <h2 id="milestone-title" class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white mb-3">00,000원 달성!</h2>
+      <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-1">대단합니다! 절약한 돈이 차곡차곡 쌓여 가상 저금통에 가득 차고 있어요. 훌륭한 자제력입니다! 🐷💚</p>
+    </div>
+  </div>
+
+  <script>
+    // --- 1. 상태 변수 및 초기 데이터 로드 ---
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0-indexed (예: 6은 7월)
+    const currentDate = today.getDate(); // 1~31
+
+    // 이번 달의 첫 요일 및 총 일수 구하기
+    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay(); // 0: 일, 1: 월 ...
+    const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    // 로컬 스토리지 키 정의
+    const STORAGE_PREFIX = `nospend_${currentYear}_${currentMonth + 1}`;
+    const STORAGE_KEY_DAYS = `${STORAGE_PREFIX}_days`;
+    const STORAGE_KEY_TARGET = `${STORAGE_PREFIX}_target`;
+    const STORAGE_KEY_DAILY_SPEND = `${STORAGE_PREFIX}_daily_spend`;
+    const STORAGE_KEY_THEME = 'nospend_theme';
+
+    // 등급 데이터 정의 (배지 컬러코드 및 칭호 레벨 포함)
+    const TIERS = [
+      { min: 0, max: 2, title: "새싹 절약러", colorClass: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/40", level: 1 },
+      { min: 3, max: 6, title: "브론즈 절약러", colorClass: "bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-900/40", level: 2 },
+      { min: 7, max: 13, title: "실버 절약러", colorClass: "bg-slate-100 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700/40", level: 3 },
+      { min: 14, max: 29, title: "골드 절약러", colorClass: "bg-yellow-50 dark:bg-yellow-950/40 text-yellow-600 dark:text-yellow-400 border-yellow-300 dark:border-yellow-900/40", level: 4 },
+      { min: 30, max: Infinity, title: "다이아 절약러", colorClass: "bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300 border-sky-300 dark:border-sky-900/40", level: 5 }
+    ];
+
+    // 상태
+    let checkedDays = JSON.parse(localStorage.getItem(STORAGE_KEY_DAYS)) || [];
+    let targetDays = parseInt(localStorage.getItem(STORAGE_KEY_TARGET)) || 15; // 기본 목표 15일
+    let dailySpend = parseInt(localStorage.getItem(STORAGE_KEY_DAILY_SPEND)) || 10000; // 기본 하루 소비 10,000원
+
+    // 숫자의 카운트업 전후 변화를 부드럽게 만들기 위한 직전 상태값 기록 객체
+    let prevStats = {
+      targetDays: 0,
+      streak: 0,
+      percent: 0,
+      successCount: 0,
+      remaining: 0,
+      savings: 0,
+      tierLevel: undefined // 등급 추적용 레벨
+    };
+
+    // 이미 달성하고 축하받은 마일스톤들을 캐싱하여 실시간 중복 알림 방지
+    let celebratedMilestones = [];
+
+    // 차트 인스턴스 저장용 변수
+    let achievementChartInstance = null;
+
+    // --- 2. DOM 요소 바인딩 ---
+    const currentMonthTitle = document.getElementById('current-month-title');
+    const calendarHeaderTitle = document.getElementById('calendar-header-title');
+    const totalMonthDaysLabel = document.getElementById('total-month-days');
+    const targetDaysDisplay = document.getElementById('target-days-display');
+    const targetSlider = document.getElementById('target-slider');
+    const streakDisplay = document.getElementById('streak-display');
+    const streakBadge = document.getElementById('streak-badge');
+    const achievementPercentDisplay = document.getElementById('achievement-percent');
+    const successCountDisplay = document.getElementById('success-count');
+    const remainingDaysDisplay = document.getElementById('remaining-days');
+    const chartCenterPercent = document.getElementById('chart-center-percent');
+    const calendarGrid = document.getElementById('calendar-grid');
+    const btnShare = document.getElementById('btn-share');
+    const motivationalMessage = document.getElementById('motivational-message');
+    const toastMessage = document.getElementById('toast-message');
+    const toastText = document.getElementById('toast-text');
+    
+    // [NEW] 가상 저금통 관련 DOM
+    const savingsDisplay = document.getElementById('savings-display');
+    const dailySpendInput = document.getElementById('daily-spend-input');
+
+    // 테마 토글 관련 DOM
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+
+    // --- 3. UI 및 헤더 초기 설정 ---
+    currentMonthTitle.textContent = `${currentMonth + 1}월`;
+    calendarHeaderTitle.textContent = `${currentYear}년 ${currentMonth + 1}월`;
+    totalMonthDaysLabel.textContent = totalDaysInMonth;
+    
+    // 목표 슬라이더 최대 범위 이번 달 총 일수로 맞춤
+    targetSlider.max = totalDaysInMonth;
+    targetSlider.value = targetDays;
+
+    // 하루 예상 소비액 세팅
+    dailySpendInput.value = dailySpend;
+
+    // --- 4. 헬퍼 함수: 커스텀 토스트 메시지 시스템 (alert 방지) ---
+    function showToast(message, type = 'success') {
+      toastText.textContent = message;
+      toastMessage.style.opacity = '100';
+      
+      setTimeout(() => {
+        toastMessage.style.opacity = '0';
+      }, 2500);
+    }
+
+    // --- 5. 수치 카운트업 애니메이션 코어 로직 ---
+    function animateCountUp(element, start, end, duration = 350, suffix = '', isCurrency = false) {
+      if (!element) return;
+      if (start === end) {
+        element.textContent = isCurrency ? (end.toLocaleString() + suffix) : (end + suffix);
+        return;
+      }
+      
+      const startTime = performance.now();
+      
+      function updateNumber(timestamp) {
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        // 부드러운 가속도 효과 (Ease-out quad)
+        const easeProgress = progress * (2 - progress);
+        const val = Math.floor(easeProgress * (end - start) + start);
+        element.textContent = isCurrency ? (val.toLocaleString() + suffix) : (val + suffix);
+        
+        if (progress < 1) {
+          requestAnimationFrame(updateNumber);
+        } else {
+          element.textContent = isCurrency ? (end.toLocaleString() + suffix) : (end + suffix);
+        }
+      }
+      requestAnimationFrame(updateNumber);
+    }
+
+    // --- 6. 핵심 알고리즘: 스트릭 계산 및 등급 분석 ---
+    function calculateStreak() {
+      if (checkedDays.length === 0) return 0;
+
+      // 정렬된 체크 목록 복사 (오름차순)
+      const sortedDays = [...checkedDays].sort((a, b) => a - b);
+      
+      // 만약 정렬된 체크일 중에 오늘(currentDate)이나 어제(currentDate - 1)가 없다면 현재 스트릭은 0입니다.
+      const hasToday = sortedDays.includes(currentDate);
+      const hasYesterday = sortedDays.includes(currentDate - 1);
+      
+      if (!hasToday && !hasYesterday) {
+        return 0;
+      }
+
+      // 연속 여부를 역순으로 찾아내며 카운트 진행
+      let currentStreak = 0;
+      let checkPivot = hasToday ? currentDate : currentDate - 1;
+
+      while (checkPivot >= 1) {
+        if (sortedDays.includes(checkPivot)) {
+          currentStreak++;
+          checkPivot--;
+        } else {
+          break; // 연속성이 끊어짐
+        }
+      }
+
+      return currentStreak;
+    }
+
+    // 스트릭 점수를 받아 알맞은 등급 사양 반환
+    function getTierConfig(streak) {
+      if (streak >= 30) return TIERS[4];
+      if (streak >= 14) return TIERS[3];
+      if (streak >= 7) return TIERS[2];
+      if (streak >= 3) return TIERS[1];
+      return TIERS[0];
+    }
+
+    // 등급 팝업 세레머니 제어
+    function triggerTierUpCelebration(tierName) {
+      const overlay = document.getElementById('celebration-overlay');
+      const celebrationTitle = document.getElementById('celebration-title');
+      
+      celebrationTitle.textContent = tierName;
+      
+      // 레이어 활성화
+      overlay.classList.remove('pointer-events-none');
+      overlay.classList.add('opacity-100');
+      overlay.querySelector('.transform').classList.remove('scale-90');
+      overlay.querySelector('.transform').classList.add('scale-100');
+      
+      // 3초 뒤 페이드 아웃 및 상태 회복
+      setTimeout(() => {
+        overlay.classList.add('pointer-events-none');
+        overlay.classList.remove('opacity-100');
+        overlay.querySelector('.transform').classList.add('scale-90');
+        overlay.querySelector('.transform').classList.remove('scale-100');
+      }, 3000);
+    }
+
+    // [NEW] 저축 마일스톤 팝업 세레머니 제어
+    function triggerMilestoneCelebration(amount) {
+      const overlay = document.getElementById('milestone-overlay');
+      const milestoneTitle = document.getElementById('milestone-title');
+      
+      milestoneTitle.textContent = `${amount.toLocaleString()}원 달성!`;
+      
+      overlay.classList.remove('pointer-events-none');
+      overlay.classList.add('opacity-100');
+      overlay.querySelector('.transform').classList.remove('scale-90');
+      overlay.querySelector('.transform').classList.add('scale-100');
+      
+      setTimeout(() => {
+        overlay.classList.add('pointer-events-none');
+        overlay.classList.remove('opacity-100');
+        overlay.querySelector('.transform').classList.add('scale-90');
+        overlay.querySelector('.transform').classList.remove('scale-100');
+      }, 3000);
+    }
+
+    // --- 7. 동기화 및 대시보드 데이터 갱신 (부드러운 카운트업 통합) ---
+    function updateDashboard() {
+      const successCount = checkedDays.length;
+      const percent = Math.min(Math.round((successCount / targetDays) * 100), 100);
+      const remaining = Math.max(0, targetDays - successCount);
+      const streak = calculateStreak();
+      
+      // 저축액 수치 정밀 획득 및 애니메이션 바인딩
+      const currentSavings = successCount * dailySpend;
+
+      // 수치 실시간 카운트업 연동
+      animateCountUp(targetDaysDisplay, prevStats.targetDays, targetDays);
+      animateCountUp(streakDisplay, prevStats.streak, streak);
+      animateCountUp(achievementPercentDisplay, prevStats.percent, percent);
+      animateCountUp(chartCenterPercent, prevStats.percent, percent, 350, '%');
+      animateCountUp(successCountDisplay, prevStats.successCount, successCount);
+      animateCountUp(remainingDaysDisplay, prevStats.remaining, remaining);
+      
+      // [NEW] 저축액 수치 콤마(toLocaleString)와 함께 카운트업
+      animateCountUp(savingsDisplay, prevStats.savings, currentSavings, 350, '원', true);
+
+      // --- 스트릭 등급 반영 및 실시간 축하 이펙트 감지 ---
+      const activeTier = getTierConfig(streak);
+      
+      // 배지 클래스 및 텍스트 갱신
+      streakBadge.className = `text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all duration-300 whitespace-nowrap ${activeTier.colorClass}`;
+      streakBadge.textContent = activeTier.title;
+
+      // 앱 최초 구동이 아닌 상황에서 등급 레벨이 이전보다 올랐을 경우에만 축하 세레머니 가동
+      if (prevStats.tierLevel !== undefined && prevStats.tierLevel < activeTier.level) {
+        triggerTierUpCelebration(activeTier.title);
+      }
+
+      // [NEW] 저축 마일스톤 돌파 세레머니 감지 (10만, 30만, 50만 원 돌파)
+      const milestones = [100000, 300000, 500000];
+      milestones.forEach(m => {
+        // 이전 저축액은 미달이었으나 이번에 달성했으며, 아직 세션 중 축하받지 않은 마일스톤인 경우
+        if (prevStats.savings < m && currentSavings >= m && !celebratedMilestones.includes(m)) {
+          celebratedMilestones.push(m);
+          // 미세 딜레이 뒤 등급업 팝업과 겹치지 않게 조율하거나 즉시 실행
+          setTimeout(() => {
+            triggerMilestoneCelebration(m);
+          }, 400);
+        }
+      });
+
+      // 이전 상태값 최신화
+      prevStats = {
+        targetDays: targetDays,
+        streak: streak,
+        percent: percent,
+        successCount: successCount,
+        remaining: remaining,
+        savings: currentSavings,
+        tierLevel: activeTier.level // 레벨 캐싱
+      };
+
+      // 동적 격려 메시지
+      updateMotivationMessage(percent, streak);
+
+      // 도넛 차트 업데이트
+      updateChart(successCount, targetDays);
+    }
+
+    // 동적 격려 메시지 매핑
+    function updateMotivationMessage(percent, streak) {
+      if (percent >= 100) {
+        motivationalMessage.textContent = "🎉 대단해요! 이번 달 목표를 100% 초과 달성했습니다!";
+      } else if (percent >= 70) {
+        motivationalMessage.textContent = "🔥 목표 달성이 눈앞에 보여요! 조금만 더 힘내세요!";
+      } else if (streak >= 5) {
+        motivationalMessage.textContent = `💪 무려 ${streak}일 연속 무지출 중! 엄청난 자제력입니다.`;
+      } else if (percent >= 30) {
+        motivationalMessage.textContent = "🍃 순조롭게 절약을 진행하고 있군요. 훌륭해요!";
+      } else if (checkedDays.length > 0) {
+        motivationalMessage.textContent = "👍 시작이 반입니다. 다음 빈자리도 그린 도장으로 채워봐요.";
+      } else {
+        motivationalMessage.textContent = "매일매일 불필요한 소비를 줄이고 스트릭을 이어 나가보세요.";
+      }
+    }
+
+    // --- 8. Chart.js 도넛 차트 생성 및 업데이트 (테마 대응) ---
+    function updateChart(success, target) {
+      const remainingToTarget = Math.max(0, target - success);
+      const dataValues = [success, remainingToTarget];
+      
+      // 목표를 초과 달성했을 경우 차트 비율 조정
+      if (success > target) {
+        dataValues[0] = target;
+        dataValues[1] = 0;
+      }
+
+      // 현재 테마에 맞는 색상 추출
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const chartTrackColor = isDarkMode ? '#23372d' : '#f1f5f9'; // 어두운 그린 또는 연그레이
+      const chartBorderColor = isDarkMode ? '#16221c' : '#ffffff'; // 카드 배경색과 통일
+
+      if (achievementChartInstance) {
+        achievementChartInstance.data.datasets[0].data = dataValues;
+        achievementChartInstance.data.datasets[0].backgroundColor = ['#10b981', chartTrackColor];
+        achievementChartInstance.data.datasets[0].borderColor = chartBorderColor;
+        achievementChartInstance.update();
+      } else {
+        const ctx = document.getElementById('achievementChart').getContext('2d');
+        achievementChartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['절약 성공', '남은 목표'],
+            datasets: [{
+              data: dataValues,
+              backgroundColor: ['#10b981', chartTrackColor],
+              borderWidth: 2,
+              borderColor: chartBorderColor,
+              hoverOffset: 4
+            }]
+          },
+          options: {
+            cutout: '75%',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false }
+            }
+          }
+        });
+      }
+    }
+
+    // --- 9. 캘린더 그리드 빌더 (테마 대응 및 스탬프 애니메이션 바인딩) ---
+    function renderCalendar() {
+      calendarGrid.innerHTML = '';
+
+      // 1일 시작 전 공백(이전 달 영역) 렌더링
+      for (let i = 0; i < firstDayIndex; i++) {
+        const emptyCell = document.createElement('div');
+        emptyCell.className = "aspect-square rounded-2xl bg-slate-50/50 dark:bg-slate-800/10 border border-slate-100/30 dark:border-slate-800/20";
+        calendarGrid.appendChild(emptyCell);
+      }
+
+      // 실제 날짜 렌더링 (모바일에서의 레이아웃 터치 영역 확보)
+      for (let day = 1; day <= totalDaysInMonth; day++) {
+        const dateButton = document.createElement('button');
+        
+        // 날짜 상태 판단
+        const isFuture = day > currentDate;
+        const isToday = day === currentDate;
+        const isChecked = checkedDays.includes(day);
+
+        // 기본 카드 베이스 스타일 (모바일에서는 조금 더 유연한 텍스트 및 패딩 크기 부여)
+        let btnClasses = "aspect-square rounded-2xl flex flex-col justify-between p-1.5 sm:p-2.5 relative transition-all duration-200 outline-none select-none ";
+        
+        // 상태별 스타일 적용
+        if (isFuture) {
+          // 미래: 클릭 불가능, 투명도 저하
+          btnClasses += "bg-slate-100/60 dark:bg-slate-800/20 text-slate-300 dark:text-slate-600 cursor-not-allowed";
+          dateButton.disabled = true;
+        } else {
+          // 과거 및 오늘: 클릭 가능
+          if (isChecked) {
+            btnClasses += "bg-emerald-500 text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 dark:hover:bg-emerald-400";
+          } else if (isToday) {
+            btnClasses += "bg-emerald-50 text-emerald-800 border-2 border-emerald-500 font-bold hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-400 dark:hover:bg-emerald-900/30";
+          } else {
+            btnClasses += "bg-slate-50 dark:bg-[#1c2e25] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#243c30] border border-slate-100 dark:border-emerald-950/50";
+          }
+        }
+
+        dateButton.className = btnClasses;
+        // 모바일 글씨 최적화
+        dateButton.innerHTML = `
+          <span class="text-[10px] sm:text-xs font-bold ${isToday ? 'text-emerald-700 dark:text-emerald-300' : ''} ${isChecked ? 'text-emerald-50' : ''}">${day}</span>
+          <div class="flex items-center justify-center flex-grow w-full">
+            ${isChecked ? '<i data-lucide="check" class="w-5 h-5 sm:w-7 sm:h-7 stamp-active text-white"></i>' : ''}
+          </div>
+        `;
+
+        // 오늘 아이콘 배지 추가 (미달성시 작은 배지 표시)
+        if (isToday && !isChecked) {
+          const todayBadge = document.createElement('span');
+          todayBadge.className = "absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400";
+          dateButton.appendChild(todayBadge);
+        }
+
+        // 클릭 이벤트 리스너 추가
+        if (!isFuture) {
+          dateButton.addEventListener('click', () => toggleDay(day));
+        }
+
+        calendarGrid.appendChild(dateButton);
+      }
+
+      // Lucide 아이콘 리프레시 호출
+      lucide.createIcons();
+    }
+
+    // --- 10. 날짜 토글 제어 ---
+    function toggleDay(day) {
+      const index = checkedDays.indexOf(day);
+      if (index > -1) {
+        // 이미 선택된 상태라면 즉시 해제
+        checkedDays.splice(index, 1);
+        showToast(`${day}일 체크를 해제했습니다.`);
+      } else {
+        // 선택되지 않은 상태라면 신규 추가 (스탬프 애니메이션 작동)
+        checkedDays.push(day);
+        showToast(`${day}일 무지출 성공 완료! 💸`, 'success');
+      }
+
+      // 데이터 저장 및 갱신
+      localStorage.setItem(STORAGE_KEY_DAYS, JSON.stringify(checkedDays));
+      
+      // UI 리렌더링 및 대시보드 연동
+      renderCalendar();
+      updateDashboard();
+    }
+
+    // --- 11. 슬라이더를 통한 목표치 변경 이벤트 ---
+    targetSlider.addEventListener('input', (e) => {
+      targetDays = parseInt(e.target.value);
+      localStorage.setItem(STORAGE_KEY_TARGET, targetDays);
+      updateDashboard();
+    });
+
+    // [NEW] 하루 평균 지출액 실시간 입력 변경 이벤트
+    dailySpendInput.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      if (!isNaN(value) && value >= 0) {
+        dailySpend = value;
+        localStorage.setItem(STORAGE_KEY_DAILY_SPEND, dailySpend);
+        updateDashboard();
+      }
+    });
+
+    // --- 12. 이미지 캡처 다운로드 (결과 공유) ---
+    btnShare.addEventListener('click', () => {
+      showToast("이미지 캡처를 준비 중입니다...");
+
+      const captureArea = document.getElementById('capture-area');
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const captureBgColor = isDarkMode ? '#0d1612' : '#f4fbf7';
+      
+      html2canvas(captureArea, {
+        backgroundColor: captureBgColor,
+        scale: 2, // 고해상도 설정
+        logging: false,
+        useCORS: true
+      }).then(canvas => {
+        try {
+          const image = canvas.toDataURL("image/png");
+          const link = document.createElement('a');
+          link.download = `무지출챌린지_${currentYear}_${currentMonth + 1}월.png`;
+          link.href = image;
+          link.click();
+          showToast("성공적으로 다운로드되었습니다! 🙌", 'success');
+        } catch (error) {
+          showToast("이미지 저장 중 일시적인 오류가 발생했습니다.");
+        }
+      });
+    });
+
+    // --- 13. 다크모드/라이트모드 제어 기능 ---
+    function initTheme() {
+      const savedTheme = localStorage.getItem(STORAGE_KEY_THEME);
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
+        document.documentElement.classList.add('dark');
+        themeIcon.setAttribute('data-lucide', 'sun');
+      } else {
+        document.documentElement.classList.remove('dark');
+        themeIcon.setAttribute('data-lucide', 'moon');
+      }
+      lucide.createIcons();
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      
+      if (isDark) {
+        localStorage.setItem(STORAGE_KEY_THEME, 'dark');
+        themeIcon.setAttribute('data-lucide', 'sun');
+        showToast("다크 모드가 활성화되었습니다. 🌙");
+      } else {
+        localStorage.setItem(STORAGE_KEY_THEME, 'light');
+        themeIcon.setAttribute('data-lucide', 'moon');
+        showToast("라이트 모드가 활성화되었습니다. ☀️");
+      }
+      
+      // 아이콘 리렌더링 및 대시보드/캘린더 갱신
+      lucide.createIcons();
+      updateDashboard();
+      renderCalendar();
+    });
+
+    // --- 14. 서비스 최초 부트스트랩 작동 ---
+    window.onload = function() {
+      initTheme();
+      renderCalendar();
+      
+      // 최초 실행 시 축하 팝업이 바로 발생하는 것을 막기 위해 레벨과 가치 캐시를 미리 획득해놓은 후 대시보드 기동
+      const initialStreak = calculateStreak();
+      const initialTier = getTierConfig(initialStreak);
+      prevStats.tierLevel = initialTier.level;
+      
+      const initialSavings = checkedDays.length * dailySpend;
+      prevStats.savings = initialSavings;
+
+      // 이미 과거에 넘겼던 마일스톤들은 미리 달성 목록에 넣어 세션 최초 로딩 시 알림 팝업 안 뜨게 설정
+      const milestones = [100000, 300000, 500000];
+      milestones.forEach(m => {
+        if (initialSavings >= m) {
+          celebratedMilestones.push(m);
+        }
+      });
+      
+      updateDashboard();
+    };
+
+  </script>
+</body>
+</html>
